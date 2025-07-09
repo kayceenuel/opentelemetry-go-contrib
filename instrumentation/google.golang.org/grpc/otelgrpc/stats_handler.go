@@ -17,8 +17,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
-	semconv "go.opentelemetry.io/otel/semconv/v1.32.0"
-	"go.opentelemetry.io/otel/semconv/v1.32.0/rpcconv"
+	semconv "go.opentelemetry.io/otel/semconv/v1.34.0"
+	"go.opentelemetry.io/otel/semconv/v1.34.0/rpcconv"
 	"go.opentelemetry.io/otel/trace"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc/internal"
@@ -112,11 +112,21 @@ func (h *serverHandler) TagRPC(ctx context.Context, info *stats.RPCTagInfo) cont
 	}
 
 	if record {
+		opts := []trace.SpanStartOption{
+			trace.WithSpanKind(trace.SpanKindServer),
+			trace.WithAttributes(append(attrs, h.SpanAttributes...)...),
+		}
+		if h.PublicEndpoint || (h.PublicEndpointFn != nil && h.PublicEndpointFn(ctx, info)) {
+			opts = append(opts, trace.WithNewRoot())
+			// Linking incoming span context if any for public endpoint.
+			if s := trace.SpanContextFromContext(ctx); s.IsValid() && s.IsRemote() {
+				opts = append(opts, trace.WithLinks(trace.Link{SpanContext: s}))
+			}
+		}
 		ctx, _ = h.tracer.Start(
 			trace.ContextWithRemoteSpanContext(ctx, trace.SpanContextFromContext(ctx)),
 			name,
-			trace.WithSpanKind(trace.SpanKindServer),
-			trace.WithAttributes(append(attrs, h.SpanAttributes...)...),
+			opts...,
 		)
 	}
 
